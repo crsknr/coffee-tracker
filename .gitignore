@@ -1,0 +1,33 @@
+# Credentials
+esp32/include/config.h
+backend/credentials.json
+
+# Build artifacts
+esp32/.pio/
+*.bin
+*.elf
+*.map
+
+# Python
+.venv/
+audio/__pycache__/
+audio/*.pyc
+
+# Google Apps Script
+node_modules/
+
+# Nextion Editor temp files
+nextion/*.tft.tmp
+nextion/CompileLog.txt
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code
+.claude/
