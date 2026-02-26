@@ -193,6 +193,15 @@ void loop() {
             handleCommand(cmd);
         }
 
+        // Serial commands (for calibration / debugging)
+        if (Serial.available()) {
+            String serialCmd = Serial.readStringUntil('\n');
+            serialCmd.trim();
+            if (serialCmd == "RECORD_REF") {
+                recordReference();
+            }
+        }
+
         // Periodic reconnect when offline
         if (connectionState == OFFLINE &&
             millis() - lastReconnectAttempt > RECONNECT_INTERVAL_MS) {

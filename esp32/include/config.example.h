@@ -11,8 +11,8 @@
 // ============================================
 // Pin Assignments
 // ============================================
-#define NEXTION_RX_PIN      38
-#define NEXTION_TX_PIN      39
+#define NEXTION_RX_PIN      44
+#define NEXTION_TX_PIN      43
 #define SD_CS_PIN           10
 #define SD_MOSI_PIN         11
 #define SD_MISO_PIN         13
@@ -51,9 +51,12 @@
 // ============================================
 #define ENABLE_AUDIO_WAKE           false
 #define I2S_SAMPLE_RATE             16000
-#define I2S_BUFFER_SIZE             1024
-#define GRINDER_DETECTION_THRESHOLD 3000
-#define GRINDER_SUSTAINED_MS        1500
+#define XCORR_FRAME_SIZE            64        // samples per xcorr frame (4 ms @ 16 kHz)
+#define XCORR_THRESHOLD             0.4f      // detection threshold (0–1)
+#define XCORR_SMOOTH_WINDOW         64        // EMA window in frames
+#define GRINDER_SUSTAINED_MS        1500      // ms above threshold before triggering
+#define RECORD_DURATION_MS          3000      // on-device reference recording length
+#define GRINDER_REF_PATH            "/grinder_ref.bin"
 
 // ============================================
 // SD Paths

@@ -140,13 +140,19 @@ String readNextionCommand() {
             return String(NEXTION_WAKE_EVENT);
         }
 
+        // 0xFF = Nextion binary event terminator; discard any partial buffer
+        if (b == 0xFF) {
+            bufferIndex = 0;
+            continue;
+        }
+
         // Newline = end of ASCII command
         if (b == '\n') {
             if (bufferIndex > 0) {
-                rxBuffer[bufferIndex] = '\0';
-                String cmd = String(rxBuffer);
-                cmd.trim();
+                int cmdLen = bufferIndex;
                 bufferIndex = 0;
+                String cmd = String(rxBuffer, cmdLen);
+                cmd.trim();
                 if (cmd.length() > 0) {
                     return cmd;
                 }

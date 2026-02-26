@@ -8,33 +8,58 @@ The Coffee Tracker wakes its display when the coffee grinder is detected by an I
 
 ### ESP32 Firmware (`audio.h` / `audio.cpp`)
 
-Detection uses simple RMS energy thresholding:
+Detection uses cross-correlation against a short reference snippet taken from a real grinder recording. This makes the detector shape-specific (grinder waveform) rather than just volume-specific (any loud noise).
 
-1. **I2S capture** — 1024 samples per frame at 16 kHz mono 16-bit (≈ 64 ms window)
-2. **RMS energy** — root mean square of the frame
-3. **Threshold check** — if RMS exceeds `GRINDER_DETECTION_THRESHOLD`, increment a sustained counter
-4. **Sustained detection** — if the counter × frame duration exceeds `GRINDER_SUSTAINED_MS`, trigger wake
-5. **Reset** — any quiet frame resets the counter
+**Per-frame algorithm** (ported from `audio/detection.ipynb`, Config 2 — 16 kHz):
 
-The grinder produces sustained broadband noise (~1-8 kHz), distinct from brief ambient events like voices or door slams.
+1. **I2S capture** — reads a DMA buffer (4 × `XCORR_FRAME_SIZE` = 256 samples, ≈ 16 ms); split into 4 × 64-sample frames
+2. **Float conversion** — `int16 / 32768.0` → float32 in `[-1, 1]`
+3. **L2 normalise** — each frame and the reference are scaled to unit norm; silent frames (norm < 1e-9) are skipped
+4. **Cross-correlation** — `xcorrMax(frame, reference, 64)`: slides the reference across the frame (mode='same', 64 lags), returns the maximum absolute dot-product
+5. **EMA smoothing** — `energy = alpha × rawEnergy + (1-alpha) × energy` where `alpha = 1 / XCORR_SMOOTH_WINDOW`
+6. **Sustained detection** — if `energy > XCORR_THRESHOLD` for `GRINDER_SUSTAINED_MS` consecutive milliseconds, `processAudioFrame()` returns `true` and the display wakes
+
+### Reference Snippet
+
+A 64-sample float32 vector normalised to unit L2 norm. Loaded in priority order at `startAudio()`:
+
+1. **SD card** — `/grinder_ref.bin` (256 bytes). Copy there with `audio/extract_reference.py` or record on-device (see below). Can be updated without reflashing.
+2. **Flash fallback** — hardcoded array in `audio.cpp`, generated from `test_audio/grinder.wav` by `extract_reference.py`. Always available.
+
+### On-Device Reference Recording (`RECORD_REF`)
+
+To capture a reference snippet directly from your microphone (best for real-world performance):
+
+1. Set `ENABLE_AUDIO_WAKE true` and flash
+2. Place the microphone where it will be during normal use
+3. Open serial monitor (`pio device monitor`)
+4. Start the grinder and immediately send `RECORD_REF` (+ Enter) over serial
+5. The device records `RECORD_DURATION_MS` of audio, extracts the middle 64 samples, L2-normalises, and saves to `/grinder_ref.bin` on the SD card
+6. Serial confirms: `[AUDIO] Reference saved to /grinder_ref.bin`
+
+The new reference is loaded immediately and persists across reboots.
 
 ### Lifecycle
 
-- `startAudio()` — called when the display enters sleep (`0x86` event), initialises the I2S driver
-- `processAudioFrame()` — called every loop iteration while sleeping; returns `true` on detection
-- `stopAudio()` — called immediately on detection or touch wake (`0x87`), frees the I2S driver
+- `startAudio()` — called on display sleep (`0x86`); initialises I2S and loads the reference snippet
+- `processAudioFrame()` — called every loop iteration while sleeping; returns `true` on sustained detection
+- `stopAudio()` — called on detection or touch wake (`0x87`); frees the I2S driver
+- `recordReference()` — called from the `RECORD_REF` serial command while awake
 
 ### Config
 
-All constants are in `src/config.h`:
+All constants are in `include/config.h`:
 
 | Constant | Default | Description |
 | -------- | ------- | ----------- |
-| `ENABLE_AUDIO_WAKE` | `false` | Set `true` to enable; `false` compiles out all I2S code |
+| `ENABLE_AUDIO_WAKE` | `false` | Set `true` to enable; `false` compiles out all I2S / audio code |
 | `I2S_SAMPLE_RATE` | `16000` | Sample rate in Hz |
-| `I2S_BUFFER_SIZE` | `1024` | Samples per DMA frame (≈ 64 ms) |
-| `GRINDER_DETECTION_THRESHOLD` | `3000` | RMS level that counts as "loud" |
+| `XCORR_FRAME_SIZE` | `64` | Samples per xcorr frame (4 ms @ 16 kHz) |
+| `XCORR_THRESHOLD` | `0.4` | Detection threshold (0–1; lower = more sensitive) |
+| `XCORR_SMOOTH_WINDOW` | `64` | EMA window in frames (≈ 256 ms) |
 | `GRINDER_SUSTAINED_MS` | `1500` | Consecutive ms above threshold before triggering |
+| `RECORD_DURATION_MS` | `3000` | Length of on-device reference recording |
+| `GRINDER_REF_PATH` | `"/grinder_ref.bin"` | SD card path for the reference snippet |
 | `I2S_WS_PIN` / `SCK_PIN` / `SD_PIN` | 4 / 5 / 6 | INMP441 wiring pins |
 
 ### Disabling for testing
@@ -43,50 +68,46 @@ All constants are in `src/config.h`:
 #define ENABLE_AUDIO_WAKE false
 ```
 
-When `false`, all I2S code is compiled out via `#if ENABLE_AUDIO_WAKE` guards. The display still wakes on touch normally.
+When `false`, all I2S / audio code is compiled out via `#if ENABLE_AUDIO_WAKE` guards. The display still wakes on touch normally.
 
 ---
 
 ## Tuning
 
 1. Set `ENABLE_AUDIO_WAKE true` and flash
-2. Open serial monitor (`pio device monitor`)
-3. Run the grinder — watch for `[AUDIO] Grinder detected (RMS=XXXX, sustained=XXXXms)` lines
-4. In a quiet room, note the ambient RMS; with the grinder on, note the grinder RMS
-5. Set `GRINDER_DETECTION_THRESHOLD` to a value between the two
-6. Adjust `GRINDER_SUSTAINED_MS` if the detection triggers too eagerly or too slowly
-
-Typical values depend heavily on microphone placement and enclosure acoustics — expect to tune empirically on your actual hardware.
+2. Open serial monitor
+3. Watch the `[AUDIO] energy=X.XXX sustained=XXXms` log lines:
+   - **Grinder on:** energy should climb above `XCORR_THRESHOLD` (0.4) quickly
+   - **Background noise:** energy should stay well below 0.4
+4. If there are false positives: raise `XCORR_THRESHOLD` (e.g. 0.5) or increase `GRINDER_SUSTAINED_MS`
+5. If the grinder is missed: lower `XCORR_THRESHOLD` or record a new on-device reference with `RECORD_REF`
 
 ---
 
-## Python Prototype (`audio/`)
-
-The `audio/` directory contains a development prototype used to analyse audio signatures before implementing the embedded version:
+## Python Prototype & Tools (`audio/`)
 
 | File | Purpose |
 | ---- | ------- |
-| `grinder_detection.py` | Cross-correlation + Welch PSD analysis, tests at 48 kHz and 8 kHz |
-| `detection.ipynb` | Jupyter notebook with frequency spectrum visualisations |
-| `test_audio/grinder.wav` | Sample grinder recording |
-| `test_audio/background-dishwasher.wav` | Sample background noise recording |
+| `detection.ipynb` | Jupyter notebook — algorithm development, cross-correlation + EMA analysis at 48 kHz and 16 kHz |
+| `extract_reference.py` | Generates `grinder_ref.bin` (for SD) and the C array fallback from `test_audio/grinder.wav` |
+| `test_audio/grinder.wav` | Sample grinder recording (48 kHz) |
+| `test_audio/background-dishwasher.wav` | Sample background noise for false-positive testing |
 
-### Running the prototype
+### Running the tools
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install numpy scipy matplotlib jupyter
-python audio/grinder_detection.py
+cd audio
+python3 -m venv .venv && source .venv/bin/activate
+pip install numpy scipy
+python extract_reference.py
+# → writes grinder_ref.bin (copy to SD card root)
+# → prints C array to paste into audio.cpp if updating the flash fallback
 ```
-
-The prototype confirmed that RMS energy thresholding is sufficient for this use case — the grinder is significantly louder than typical office background noise.
 
 ---
 
 ## Future Improvements
 
-- **Spectral flatness check** — grinder is broadband; speech has harmonic peaks. An FFT-based flatness measure would reduce false positives.
-- **Adaptive threshold** — baseline the ambient noise floor automatically at boot.
-- **Debounce** — suppress re-triggers for N seconds after detection.
 - **ULP coprocessor** — for true ultra-low-power standby (current implementation keeps the main CPU running during display sleep).
+- **Multi-frame reference** — average several frames to get a more representative template.
+- **Adaptive EMA baseline** — track long-term ambient energy to auto-adjust the threshold.

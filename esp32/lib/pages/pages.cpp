@@ -116,14 +116,14 @@ void showConsumePage(const String &username)
     setText("consume", "userbalance",
             (connectionState == ONLINE && user) ? formatBalance(user->balance) : "offline");
 
-    // Product prices (reformatted from "0.30\u20ac" to "\u20ac0.30")
+    // Product prices (displayed as "0.30€")
     const char *priceComponents[] = {
         "single_price", "double_price", "cow_price", "oat_price"};
     for (int i = 0; i < 4 && i < appConfig.productCount; i++)
     {
         float price = parsePrice(appConfig.products[i].price);
         char buf[16];
-        snprintf(buf, sizeof(buf), "\xe2\x82\xac%.2f", price);
+        snprintf(buf, sizeof(buf), "%.2f\xe2\x82\xac", price);
         setText("consume", priceComponents[i], String(buf));
     }
 
@@ -187,7 +187,7 @@ void showLoggingPage(const String &type, const String &username, float amount)
             (connectionState == ONLINE && user) ? formatBalance(user->balance) : "offline");
 
     char amountBuf[16];
-    snprintf(amountBuf, sizeof(amountBuf), "\xe2\x82\xac%.2f", amount);
+    snprintf(amountBuf, sizeof(amountBuf), "%.2f\xe2\x82\xac", amount);
     setText("logging", "amount", String(amountBuf));
 
     if (type == "consume")
@@ -240,7 +240,7 @@ void showLoggedPage(const String &type, const String &username,
             connectionState == ONLINE ? formatBalance(newBalance) : "offline");
 
     char amountBuf[16];
-    snprintf(amountBuf, sizeof(amountBuf), "\xe2\x82\xac%.2f", amount);
+    snprintf(amountBuf, sizeof(amountBuf), "%.2f\xe2\x82\xac", amount);
     setText("logged", "amount", String(amountBuf));
 
     if (type == "consume")

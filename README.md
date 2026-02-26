@@ -136,7 +136,7 @@ All compile-time settings live in `esp32/include/config.h` (gitignored; copy fro
 | `WIFI_SSID` / `WIFI_PASSWORD` | — | WiFi credentials |
 | `BACKEND_URL` | — | Google Apps Script web app URL |
 | `ENABLE_AUDIO_WAKE` | `false` | Enable grinder detection wake |
-| `NEXTION_RX_PIN` / `TX_PIN` | 38 / 39 | Nextion UART pins |
+| `NEXTION_RX_PIN` / `TX_PIN` | 44 / 43 | Nextion UART pins |
 | `SD_CS_PIN` etc. | 10-13 | SPI pins for SD card |
 | `I2S_WS_PIN` / `SCK_PIN` / `SD_PIN` | 4 / 5 / 6 | I2S pins for INMP441 |
 | `GRINDER_DETECTION_THRESHOLD` | 3000 | RMS energy threshold for grinder detection |
