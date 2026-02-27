@@ -25,6 +25,9 @@ void setPage(const String& pageName);
 void setThsp(int ms);
 void setTimer(const String& page, const String& timer, int ms, int enable);
 void setBco(const String& page, const String& component, int color);
+void startBackendAnim();                                          // enable backend timer on current page
+void stopBackendAnim();                                           // disable backend timer on current page
+void addWaveformPoint(int waveformId, int channel, uint8_t value); // add one point to a waveform graph
 
 // ============================================
 // Receive Commands

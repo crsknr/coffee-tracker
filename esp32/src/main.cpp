@@ -202,6 +202,15 @@ void loop() {
             }
         }
 
+        // Audio diagnostics page: push live xcorr and threshold to waveform graph
+        if (currentPage == PAGE_AUDIO && ENABLE_AUDIO_WAKE) {
+            processAudioFrame();  // updates smoothedEnergy; detection return ignored
+            uint8_t threshVal = (uint8_t)(getXcorrThreshold() * 255.0f);
+            uint8_t energyVal = (uint8_t)(min(1.0f, getSmoothedEnergy()) * 255.0f);
+            addWaveformPoint(13, 0, threshVal);  // channel 0 = threshold line
+            addWaveformPoint(13, 1, energyVal);  // channel 1 = live xcorr energy
+        }
+
         // Periodic reconnect when offline
         if (connectionState == OFFLINE &&
             millis() - lastReconnectAttempt > RECONNECT_INTERVAL_MS) {

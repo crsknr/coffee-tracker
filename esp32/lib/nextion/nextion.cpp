@@ -98,6 +98,29 @@ void setBco(const String& page, const String& component, int color) {
 }
 
 // ============================================
+// Helper: backend animation timer
+// Enables/disables the "backend" timer on the current page,
+// which toggles the backend_icon visibility automatically.
+// ============================================
+
+void startBackendAnim() {
+    sendNextion("backend.en=1");
+}
+
+void stopBackendAnim() {
+    sendNextion("backend.en=0");
+}
+
+// ============================================
+// Helper: add one data point to a waveform graph
+// add waveformId,channel,value  (value 0–255)
+// ============================================
+
+void addWaveformPoint(int waveformId, int channel, uint8_t value) {
+    sendNextion("add " + String(waveformId) + "," + String(channel) + "," + String(value));
+}
+
+// ============================================
 // Consume trailing 0xFF bytes after system event
 // ============================================
 

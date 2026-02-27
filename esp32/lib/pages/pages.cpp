@@ -3,6 +3,7 @@
 #include "state.h"
 #include "nextion.h"
 #include "backend.h"
+#include "audio.h"
 #include <WiFi.h>
 #include <math.h>
 
@@ -22,7 +23,6 @@ void updateStatusBar(const String &page)
         setText(page, "status", "");
     }
     setVis("wifi_icon", WiFi.status() == WL_CONNECTED);
-    setVis("backend_icon", false);
 }
 
 // ============================================
@@ -215,9 +215,9 @@ void showLoggingPage(const String &type, const String &username, float amount)
         setText("logging", "subtitle", "Undo last action");
     }
 
-    // Status bar text + visibility, then backend_icon on top
+    // Status bar text + visibility, then start backend animation
     updateStatusBar("logging");
-    setVis("backend_icon", true);
+    startBackendAnim();
 
     Serial.println("[PAGE] -> logging (" + type + ")");
 }
@@ -279,27 +279,39 @@ void showLoggedPage(const String &type, const String &username,
 
 bool showAccountPage(const String &username)
 {
-    // Fetch transaction history before switching page
-    BackendResponse resp = httpGet("getLastTransactions",
-                                   "user=" + username + "&limit=10");
-    if (!resp.success)
-    {
-        Serial.println("[PAGE] Account page: failed to fetch transactions");
-        return false;
-    }
-
     User *user = findUser(username);
 
-    // Switch page
+    // Switch page immediately so the user sees a response right away
     currentPage = PAGE_ACCOUNT;
     setPage("account");
     setThsp(THSP_ACCOUNT);
 
-    // Text content
+    // Populate what we already know; leave transaction rows blank
     setText("account", "username", username);
     if (user)
     {
         setText("account", "userbalance", formatBalance(user->balance));
+    }
+
+    // Hide action button while loading
+    setVis("balance_btn", false);
+
+    // Status bar + start backend animation
+    updateStatusBar("account");
+    startBackendAnim();
+
+    // Fetch transaction history
+    BackendResponse resp = httpGet("getLastTransactions",
+                                   "user=" + username + "&limit=10");
+
+    // Stop animation and reveal action button
+    stopBackendAnim();
+    setVis("balance_btn", true);
+
+    if (!resp.success)
+    {
+        Serial.println("[PAGE] Account page: failed to fetch transactions");
+        return false;
     }
 
     // Fill transaction rows
@@ -315,17 +327,7 @@ bool showAccountPage(const String &username)
             setText("account", "row" + idx + "_item", row["item"].as<String>());
             setText("account", "row" + idx + "_qty", row["qty"].as<String>());
         }
-        else
-        {
-            setText("account", "row" + idx + "_date", "");
-            setText("account", "row" + idx + "_action", "");
-            setText("account", "row" + idx + "_item", "");
-            setText("account", "row" + idx + "_qty", "");
-        }
     }
-
-    // Status bar text + visibility
-    updateStatusBar("account");
 
     Serial.println("[PAGE] -> account (" + username + ")");
     return true;
@@ -373,8 +375,23 @@ void showBalancePage(const String &username)
 
 bool showInventoryPage()
 {
-    // Fetch fresh inventory data before switching page
+    const char *itemKeys[] = {"beans", "water", "cow", "oat"};
+
+    // Switch page immediately
+    currentPage = PAGE_INVENTORY;
+    setPage("inventory");
+    setThsp(THSP_INVENTORY);
+
+    // Status bar + start backend animation
+    updateStatusBar("inventory");
+    startBackendAnim();
+
+    // Fetch fresh inventory data
     BackendResponse resp = httpGet("getInventory");
+
+    // Stop animation
+    stopBackendAnim();
+
     if (resp.success)
     {
         JsonArray invArr = resp.doc["inventory"].as<JsonArray>();
@@ -391,49 +408,15 @@ bool showInventoryPage()
         }
     }
 
-    // Switch page
-    currentPage = PAGE_INVENTORY;
-    setPage("inventory");
-    setThsp(THSP_INVENTORY);
-
-    // Item keys matching Nextion component names
-    const char *itemKeys[] = {"beans", "water", "cow", "oat"};
-
-    // Pic IDs per item per status
-    const int greenPics[] = {PIC_BEANS_GREEN, PIC_WATER_GREEN, PIC_COW_GREEN, PIC_OAT_GREEN};
-    const int yellowPics[] = {PIC_BEANS_YELLOW, PIC_WATER_YELLOW, PIC_COW_YELLOW, PIC_OAT_YELLOW};
-    const int redPics[] = {PIC_BEANS_RED, PIC_WATER_RED, PIC_COW_RED, PIC_OAT_RED};
-
+    // Render items: stock value with optional status label
     for (int i = 0; i < 4 && i < appConfig.inventoryCount; i++)
     {
-        String key = String(itemKeys[i]);
-
-        int picId;
-        int bcoColor;
-        if (appConfig.inventory[i].status == "green")
-        {
-            picId = greenPics[i];
-            bcoColor = COLOR_GREEN;
-        }
-        else if (appConfig.inventory[i].status == "yellow")
-        {
-            picId = yellowPics[i];
-            bcoColor = COLOR_YELLOW;
-        }
-        else
-        {
-            picId = redPics[i];
-            bcoColor = COLOR_RED;
-        }
-
-        setText("inventory", key + "_qty", appConfig.inventory[i].stock);
-        setBco("inventory", key + "_qty", bcoColor);
-        setBco("inventory", key, bcoColor);
-        setPic("inventory", key + "_bg", picId);
+        String key      = String(itemKeys[i]);
+        String stockTxt = appConfig.inventory[i].stock;
+        if      (appConfig.inventory[i].status == "yellow") stockTxt += " (low)";
+        else if (appConfig.inventory[i].status == "red")    stockTxt += " (critical)";
+        setText("inventory", key + "_qty", stockTxt);
     }
-
-    // Status bar text + visibility
-    updateStatusBar("inventory");
 
     Serial.println("[PAGE] -> inventory");
     return true;
@@ -491,4 +474,28 @@ void showInfoPage()
     updateStatusBar("info");
 
     Serial.println("[PAGE] -> info");
+}
+
+// ============================================
+// Audio Diagnostics Page
+// ============================================
+
+void showAudioPage()
+{
+    currentPage = PAGE_AUDIO;
+    setPage("audio");
+    setThsp(0);  // no auto-sleep while monitoring
+
+    // Show current threshold
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%.2f", getXcorrThreshold());
+    setText("audio", "threshold_val", String(buf));
+
+    // Status bar
+    updateStatusBar("audio");
+
+    // Start I2S so processAudioFrame() can be called from main loop
+    if (ENABLE_AUDIO_WAKE) startAudio();
+
+    Serial.println("[PAGE] -> audio");
 }

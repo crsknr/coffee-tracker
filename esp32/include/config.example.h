@@ -80,18 +80,6 @@
 #define PIC_ICON_BALANCE    21
 #define PIC_ICON_UNDO       22
 
-#define PIC_BEANS_GREEN     26
-#define PIC_BEANS_YELLOW    25
-#define PIC_BEANS_RED       24
-#define PIC_WATER_GREEN     29
-#define PIC_WATER_YELLOW    28
-#define PIC_WATER_RED       27
-#define PIC_COW_GREEN       32
-#define PIC_COW_YELLOW      31
-#define PIC_COW_RED         30
-#define PIC_OAT_GREEN       35
-#define PIC_OAT_YELLOW      34
-#define PIC_OAT_RED         33
 
 // ============================================
 // Inventory Colors (Nextion 65536-format .bco)

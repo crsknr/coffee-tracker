@@ -5,6 +5,7 @@
 #include "backend.h"
 #include "storage.h"
 #include "pages.h"
+#include "audio.h"
 #include <ArduinoJson.h>
 #include <math.h>
 
@@ -363,8 +364,8 @@ static void handleSettle(const String &username)
 
 static void handleSync()
 {
-    // Show backend activity
-    setVis("backend_icon", true);
+    // Show backend activity via timer
+    startBackendAnim();
 
     BackendResponse resp = httpGet("getConfig");
 
@@ -431,7 +432,7 @@ static void handleSync()
         setText("info", "last_sync", "Sync failed");
     }
 
-    setVis("backend_icon", false);
+    stopBackendAnim();
 }
 
 // ============================================
@@ -471,7 +472,6 @@ void handleCommand(const String &command)
                 Serial.println("[CMD] Inventory blocked: offline");
                 return;
             }
-            setVis("backend_icon", true);
             showInventoryPage();
         }
         else if (action == "INFO")
@@ -510,7 +510,6 @@ void handleCommand(const String &command)
                 Serial.println("[CMD] Account blocked: offline");
                 return;
             }
-            setVis("backend_icon", true);
             showAccountPage(data);
         }
         else if (action == "PURCHASE")
@@ -535,9 +534,9 @@ void handleCommand(const String &command)
     // --- LOGGED page ---
     else if (page == "LOGGED")
     {
-        if (action == "UNDO" && data.length() > 0)
+        if (action == "UNDO")
         {
-            handleUndo(data);
+            handleUndo(currentUser);
         }
         else if (action == "BACK")
         {
@@ -603,6 +602,38 @@ void handleCommand(const String &command)
         else if (action == "SYNC")
         {
             handleSync();
+        }
+        else if (action == "AUDIO")
+        {
+            showAudioPage();
+        }
+    }
+
+    // --- AUDIO page ---
+    else if (page == "AUDIO")
+    {
+        if (action == "BACK")
+        {
+            if (ENABLE_AUDIO_WAKE) stopAudio();
+            showInfoPage();
+        }
+        else if (action == "RECORD")
+        {
+            recordReference();
+        }
+        else if (action == "XCORR+")
+        {
+            adjustXcorrThreshold(+0.05f);
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%.2f", getXcorrThreshold());
+            setText("audio", "threshold_val", String(buf));
+        }
+        else if (action == "XCORR-")
+        {
+            adjustXcorrThreshold(-0.05f);
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%.2f", getXcorrThreshold());
+            setText("audio", "threshold_val", String(buf));
         }
     }
 }

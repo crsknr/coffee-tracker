@@ -17,5 +17,6 @@ bool showAccountPage(const String& username);
 void showBalancePage(const String& username);
 bool showInventoryPage();
 void showInfoPage();
+void showAudioPage();
 
 #endif

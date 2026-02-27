@@ -32,6 +32,7 @@ static const float grinder_ref_default[XCORR_FRAME_SIZE] = {
 static float    reference[XCORR_FRAME_SIZE];
 static float    smoothedEnergy  = 0.0f;
 static int      sustainedFrames = 0;
+static float    xcorrThreshold  = XCORR_THRESHOLD;  // runtime-adjustable
 
 // ============================================
 // Internal helpers
@@ -177,7 +178,7 @@ bool processAudioFrame() {
         // Exponential moving average
         smoothedEnergy = alpha * rawEnergy + (1.0f - alpha) * smoothedEnergy;
 
-        if (smoothedEnergy > XCORR_THRESHOLD) {
+        if (smoothedEnergy > xcorrThreshold) {
             sustainedFrames++;
             float sustainedMs = sustainedFrames * frameDurationMs;
             Serial.printf("[AUDIO] energy=%.3f sustained=%.0fms\n",
@@ -288,4 +289,23 @@ void recordReference() {
 #else
     Serial.println("[AUDIO] ENABLE_AUDIO_WAKE is false — nothing to record");
 #endif
+}
+
+// ============================================
+// Runtime threshold getters / setter
+// ============================================
+
+float getSmoothedEnergy() {
+    return smoothedEnergy;
+}
+
+float getXcorrThreshold() {
+    return xcorrThreshold;
+}
+
+void adjustXcorrThreshold(float delta) {
+    xcorrThreshold += delta;
+    if (xcorrThreshold < 0.05f) xcorrThreshold = 0.05f;
+    if (xcorrThreshold > 0.95f) xcorrThreshold = 0.95f;
+    Serial.printf("[AUDIO] xcorrThreshold=%.2f\n", xcorrThreshold);
 }

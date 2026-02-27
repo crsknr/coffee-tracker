@@ -53,7 +53,7 @@ enum ConnectionState { ONLINE, OFFLINE };
 enum Page {
     PAGE_BOOT, PAGE_USER, PAGE_CONSUME, PAGE_PURCHASE,
     PAGE_LOGGING, PAGE_LOGGED, PAGE_ACCOUNT, PAGE_BALANCE,
-    PAGE_INVENTORY, PAGE_INFO
+    PAGE_INVENTORY, PAGE_INFO, PAGE_AUDIO
 };
 
 // ============================================
