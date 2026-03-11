@@ -31,3 +31,6 @@ nextion/CompileLog.txt
 
 # Claude Code
 .claude/
+
+# FreeCAD
+*.FCBak
