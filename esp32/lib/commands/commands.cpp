@@ -364,7 +364,10 @@ static void handleSettle(const String &username)
 
 static void handleSync()
 {
-    // Show backend activity via timer
+    // Hide sync button and show backend activity via timer
+    setVis("sync", false);
+    setVis("nav_prev", false);
+    setVis("audio", false);
     startBackendAnim();
 
     BackendResponse resp = httpGet("getConfig");
@@ -433,6 +436,9 @@ static void handleSync()
     }
 
     stopBackendAnim();
+    setVis("sync", true);
+    setVis("nav_prev", true);
+    setVis("audio", true);
 }
 
 // ============================================
@@ -621,19 +627,16 @@ void handleCommand(const String &command)
         {
             recordReference();
         }
-        else if (action == "XCORR+")
+        else if (action == "XCORR")
         {
-            adjustXcorrThreshold(+0.05f);
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.2f", getXcorrThreshold());
-            setText("audio", "threshold_val", String(buf));
-        }
-        else if (action == "XCORR-")
-        {
-            adjustXcorrThreshold(-0.05f);
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%.2f", getXcorrThreshold());
-            setText("audio", "threshold_val", String(buf));
+            if (data == "+")
+            {
+                adjustXcorrThreshold(+0.05f);
+            }
+            else if (data == "-")
+            {
+                adjustXcorrThreshold(-0.05f);
+            }
         }
     }
 }

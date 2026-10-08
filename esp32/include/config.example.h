@@ -4,6 +4,7 @@
 // ============================================
 // Network
 // ============================================
+#define WIFI_HOSTNAME       "Coffee Tracker"
 #define WIFI_SSID           "YOUR_WIFI_SSID"
 #define WIFI_PASSWORD       "YOUR_WIFI_PASSWORD"
 #define BACKEND_URL         "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"
@@ -34,17 +35,17 @@
 #define BUFFER_TIMEOUT_MS           2000
 
 // ============================================
-// Sleep Timeouts (thsp in ms)
+// Sleep Timeouts (thsp in s)
 // ============================================
-#define THSP_USER           45000
-#define THSP_CONSUME        120000
-#define THSP_PURCHASE       120000
+#define THSP_USER           120
+#define THSP_CONSUME        120
+#define THSP_PURCHASE       120
 #define THSP_LOGGING        0
-#define THSP_LOGGED         30000
-#define THSP_ACCOUNT        120000
-#define THSP_BALANCE        180000
-#define THSP_INVENTORY      60000
-#define THSP_INFO           60000
+#define THSP_LOGGED         30
+#define THSP_ACCOUNT        120
+#define THSP_BALANCE        180
+#define THSP_INVENTORY      60
+#define THSP_INFO           60
 
 // ============================================
 // Audio
@@ -52,7 +53,7 @@
 #define ENABLE_AUDIO_WAKE           false
 #define I2S_SAMPLE_RATE             16000
 #define XCORR_FRAME_SIZE            64        // samples per xcorr frame (4 ms @ 16 kHz)
-#define XCORR_THRESHOLD             0.4f      // detection threshold (0–1)
+#define XCORR_THRESHOLD             0.3f      // detection threshold (0–1)
 #define XCORR_SMOOTH_WINDOW         64        // EMA window in frames
 #define GRINDER_SUSTAINED_MS        1500      // ms above threshold before triggering
 #define RECORD_DURATION_MS          3000      // on-device reference recording length
@@ -73,24 +74,8 @@
 #define MAX_INVENTORY       8
 
 // ============================================
-// Picture IDs (from Nextion HMI)
-// ============================================
-#define PIC_ICON_COFFEE     19
-#define PIC_ICON_PURCHASE   20
-#define PIC_ICON_BALANCE    21
-#define PIC_ICON_UNDO       22
-
-
-// ============================================
-// Inventory Colors (Nextion 65536-format .bco)
-// ============================================
-#define COLOR_GREEN         50800
-#define COLOR_YELLOW        48332
-#define COLOR_RED           43690
-
-// ============================================
 // Firmware
 // ============================================
-#define FIRMWARE_VERSION    "v1.0.0"
+#define FIRMWARE_VERSION    "v1.0.1"
 
 #endif

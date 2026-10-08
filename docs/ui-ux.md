@@ -10,17 +10,24 @@ The Nextion display acts as a dumb terminal. It captures user input and renders 
 
 **On every page transition, the ESP32:**
 
-1. Sets all text fields and properties on the target page
-2. Sets component visibility where needed
-3. Sets flow timer if applicable
-4. Sets sleep-on-no-touch timeout (`thsp`) appropriate for the target page
-5. Sends page switch command
+1. Switches to the target page immediately so the user sees a response right away
+2. Sets all text fields and properties known at switch time
+3. If the page requires a backend fetch: starts the backend animation timer, performs the request, then populates the remaining fields and stops the timer
+4. Sets component visibility (action buttons hidden during loading, shown after)
+5. Sets flow timer if applicable
+6. Sets sleep-on-no-touch timeout (`thsp`) appropriate for the target page
 
 **Nextion-managed logic (no ESP involvement):**
 
 - Badge counter cycling on `consume` and `purchase` (tap to increment, wrap at limit, reset to 0 on page load)
 - Confirm button enable/disable based on badge values
 - Balance text color (checks first character for `-`, sets red if negative, green otherwise)
+- `backend_icon` toggling — the `backend` timer on each page toggles the icon when enabled
+
+**HMI defaults:**
+
+- All text objects that the ESP sets dynamically are initialised to an empty string in the Nextion HMI, preventing stale values on page load
+- All dynamic visibility objects (buttons, icons, overlays) are initialised to `vis=0`, preventing ghost elements during page transitions
 
 ### 1.2 Pages
 
@@ -34,18 +41,20 @@ The Nextion display acts as a dumb terminal. It captures user input and renders 
 | 5   | `logged`    | Unified done screen (consume, purchase, balance, undo)    |
 | 6   | `account`   | Transaction history                                       |
 | 7   | `balance`   | QR code / PayPal settlement                               |
-| 8   | `inventory` | Inventory overview with traffic lights                    |
+| 8   | `inventory` | Inventory overview with stock levels                      |
 | 9   | `info`      | System info and manual sync                               |
+| 10  | `audio`     | Audio diagnostics — live xcorr graph and reference capture|
 
 ### 1.3 Status Bar Pattern
 
-The status bar is present on all pages except `boot`. The ESP updates these objects before every page switch:
+The status bar is present on all pages except `boot`. The ESP updates these objects after every page switch:
 
 ```nextion
 <page>.status.txt           // "Offline - logging locally" or "" (empty when online)
 vis <page>.wifi_icon        // 1 if WiFi connected, 0 if disconnected
-vis <page>.backend_icon     // 1 when doing a backend request, 0 if idle
 ```
+
+The `backend_icon` visibility is controlled by a Nextion timer named `backend` on each page. When the ESP enables it (`backend.en=1`) before a request, the timer toggles the icon to create a blinking loading indicator. When the ESP disables it (`backend.en=0`), it also explicitly hides the icon (`vis backend_icon,0`) to prevent it remaining visible at the moment the timer stops. The icon is invisible by default.
 
 The time display (HH:MM, top left) is driven by the Nextion's internal RTC via a per-page timer component that refreshes every second. The ESP sets the RTC at boot and on manual sync only.
 
@@ -55,7 +64,7 @@ The time display (HH:MM, top left) is driven by the Nextion's internal RTC via a
 
 ### 2.1 Boot Page
 
-**Page ID:** `boot`  
+**Page ID:** `boot`
 
 **When shown:** ESP32 power-on or restart only
 
@@ -115,6 +124,7 @@ If WiFi fails at step 1:
 | `balance`   | 180s                  | Display sleeps                     |
 | `inventory` | 60s                   | Display sleeps                     |
 | `info`      | 60s                   | Display sleeps                     |
+| `audio`     | 0 (disabled)          | No auto-sleep during monitoring    |
 
 ### 3.3 Flow Timers
 
@@ -151,9 +161,9 @@ Set by ESP at boot (§2.1 step 2) and on `PAGE:INFO:SYNC`. Each page has a Nexti
 
 ### 4.1 User
 
-**Page ID:** `user`  
+**Page ID:** `user`
 
-**Entry points:** Boot completion, wake from sleep/grinder, return from any completed flow  
+**Entry points:** Boot completion, wake from sleep/grinder, return from any completed flow
 
 **`thsp`:** 45s
 
@@ -188,7 +198,7 @@ user.inventory.txt         // "Low on Beans!" or ""
 | Element             | Command to ESP                | ESP action                                   |
 | ------------------- | ----------------------------- | -------------------------------------------- |
 | User name button    | `PAGE:USER:SELECT:<username>` | Populate `consume`, switch to it             |
-| "Coffee List" title | `PAGE:USER:INVENTORY`         | Populate `inventory`, switch to it           |
+| "Coffee List" title | `PAGE:USER:INVENTORY`         | Switch to `inventory` immediately, then load |
 | Top bar             | `PAGE:USER:INFO`              | Populate `info`, switch to it                |
 | Left/right icons    | `PAGE:USER:NAV:<next/prev>`   | Populate `user` with next/prev page of users |
 
@@ -196,9 +206,9 @@ user.inventory.txt         // "Low on Beans!" or ""
 
 ### 4.2 Consume
 
-**Page ID:** `consume`  
+**Page ID:** `consume`
 
-**Entry point:** `PAGE:USER:SELECT:<username>`  
+**Entry point:** `PAGE:USER:SELECT:<username>`
 
 **`thsp`:** 120s
 
@@ -207,10 +217,10 @@ user.inventory.txt         // "Low on Beans!" or ""
 ```nextion
 consume.username.txt      // "Christoph"
 consume.userbalance.txt   // "-15.40€" (Nextion sets color based on leading "-")
-consume.single_price.txt  // "€0.40"
-consume.double_price.txt  // "€0.60"
-consume.cow_price.txt     // "€0.20"
-consume.oat_price.txt     // "€0.30"
+consume.single_price.txt  // "0.40€"
+consume.double_price.txt  // "0.60€"
+consume.cow_price.txt     // "0.20€"
+consume.oat_price.txt     // "0.30€"
 vis consume.purchase      // 1 if user is treasurer
 --- status bar ---
 ```
@@ -223,7 +233,7 @@ Badges and confirm button state are Nextion-managed.
 | -------------- | --------------------------------------------------------------- | ------------------------------------------------------------- |
 | Back icon      | `PAGE:CONSUME:BACK`                                             | Populate `user`, switch to it                                 |
 | Confirm button | `PAGE:CONSUME:CONFIRM:<username>,<single>,<double>,<cow>,<oat>` | Populate `logging` for consume, switch, initiate backend call |
-| User name text | `PAGE:CONSUME:ACCOUNT:<username>`                               | Populate `account`, switch to it                              |
+| User name text | `PAGE:CONSUME:ACCOUNT:<username>`                               | Switch to `account` immediately, then load transactions       |
 | Purchase icon  | `PAGE:CONSUME:PURCHASE:<username>`                              | Populate `purchase`, switch to it                             |
 
 #### Badge Logic (Nextion-managed)
@@ -235,13 +245,17 @@ Badges and confirm button state are Nextion-managed.
 | Cow Milk | 4   | 0 → 1 → 2 → 3 → 4 → 0 |
 | Oat Milk | 4   | 0 → 1 → 2 → 3 → 4 → 0 |
 
+#### Raw byte encoding
+
+The Nextion sends badge counts as raw bytes (e.g. `chr(n.val)`). The ESP interprets any byte < 0x20 as its integer value rather than an ASCII character. A zero count is sent as `0x00` (null byte) — handled correctly by the length-aware string parser.
+
 ---
 
 ### 4.3 Purchase
 
-**Page ID:** `purchase`  
+**Page ID:** `purchase`
 
-**Entry points:** purchase icon on `consume`  
+**Entry points:** purchase icon on `consume`
 
 **`thsp`:** 120s
 
@@ -279,9 +293,9 @@ Badges and confirm button state are Nextion-managed.
 
 ### 4.4 Logging (Unified Loading Screen)
 
-**Page ID:** `logging`  
+**Page ID:** `logging`
 
-**Entry points:** Confirm on `consume`, Confirm on `purchase`, "I've PayPal'ed" on `balance`, Undo on `logged`  
+**Entry points:** Confirm on `consume`, Confirm on `purchase`, "I've PayPal'ed" on `balance`, Undo on `logged`
 
 **`thsp`:** 0 (disabled)
 
@@ -291,33 +305,33 @@ Badges and confirm button state are Nextion-managed.
 logging.username.txt         // "Christoph"
 logging.userbalance.txt      // "-15.40€" (pre-transaction)
 logging.title.txt            // "Logging..." or "Recording payment" or "Undo"
-logging.icon.pic             // picture ID (coffee cup / box / hand / undo arrow)
-logging.amount.txt           // "€1.60"
+logging.amount.txt           // "1.60€"
 logging.subtitle.txt         // "Logging coffee" / "Logging purchase" /
                              // "Clearing balance" / "Undo last action"
+action.val                   // 0=consume, 1=purchase, 2=balance, 3=undo
 --- status bar ---
 ```
 
-No interactive elements. The ESP switches away when the backend responds.
+The `action` variable drives a Nextion-managed animation (icon swap / transition). The `backend` timer is enabled when this page is shown and stops automatically when the page switches to `logged`. No interactive elements.
 
 #### Configurations
 
-| Context  | title.txt           | icon.pic          | subtitle.txt       |
-| -------- | ------------------- | ----------------- | ------------------ |
-| Consume  | `Logging...`        | coffee cup        | `Logging coffee`   |
-| Purchase | `Logging...`        | box with arrow    | `Logging purchase` |
-| Balance  | `Recording payment` | hand with coins   | `Clearing balance` |
-| Undo     | `Undo`              | undo arrow (dark) | `Undo last action` |
+| Context  | title.txt           | action.val | subtitle.txt       |
+| -------- | ------------------- | ---------- | ------------------ |
+| Consume  | `Logging...`        | `0`        | `Logging coffee`   |
+| Purchase | `Logging...`        | `1`        | `Logging purchase` |
+| Balance  | `Recording payment` | `2`        | `Clearing balance` |
+| Undo     | `Undo`              | `3`        | `Undo last action` |
 
 ---
 
 ### 4.5 Logged (Unified Done Screen)
 
-**Page ID:** `logged`  
+**Page ID:** `logged`
 
-**Entry points:** Completion of any action on `logging`  
+**Entry points:** Completion of any action on `logging`
 
-**`thsp`:** 30s (safety fallback)  
+**`thsp`:** 30s (safety fallback)
 
 **Flow timer:** 5000ms
 
@@ -326,7 +340,7 @@ No interactive elements. The ESP switches away when the backend responds.
 ```
 logged.username.txt          // "Christoph"
 logged.userbalance.txt       // "-17.00€" (updated balance)
-logged.amount.txt            // "€1.60"
+logged.amount.txt            // "1.60€"
 logged.subtitle.txt          // "Logged coffee" / "Logged purchase" /
                              // "Balance settled" / "Action undone"
 vis logged.undo_btn          // 1 to show, 0 to hide
@@ -357,27 +371,35 @@ When `PAGE:LOGGED:TIMEOUT` fires:
 
 #### Interactions
 
-| Element      | Command to ESP                | ESP action                                             |
-| ------------ | ----------------------------- | ------------------------------------------------------ |
-| Back icon    | `PAGE:LOGGED:BACK`            | Switch to `user`                                       |
-| Undo button  | `PAGE:LOGGED:UNDO:<username>` | Populate `logging` for undo, switch, initiate reversal |
-| Flow timeout | `PAGE:LOGGED:TIMEOUT`         | Check context and navigate (see table above)           |
+| Element      | Command to ESP        | ESP action                                             |
+| ------------ | --------------------- | ------------------------------------------------------ |
+| Back icon    | `PAGE:LOGGED:BACK`    | Switch to `user`                                       |
+| Undo button  | `PAGE:LOGGED:UNDO`    | Populate `logging` for undo, switch, initiate reversal |
+| Flow timeout | `PAGE:LOGGED:TIMEOUT` | Check context and navigate (see table above)           |
+
+The username for undo is taken from the cached `currentUser` state — the Nextion does not send it.
 
 ---
 
 ### 4.6 Account
 
-**Page ID:** `account`  
+**Page ID:** `account`
 
-**Entry point:** Tap user name text on `consume`  
+**Entry point:** Tap user name text on `consume`
 
 **`thsp`:** 120s
+
+#### Loading Behaviour
+
+The ESP switches to the `account` page immediately, shows username and cached balance, and hides `nav_prev` and `balance`. The `backend` timer starts. Once the transaction history arrives, the rows are filled and both buttons become visible again.
 
 #### ESP-Set Objects
 
 ```nextion
 account.username.txt           // "Christoph"
 account.userbalance.txt        // "-15.40€"
+vis account.nav_prev           // 0 while loading, 1 after data arrives
+vis account.balance            // 0 while loading, 1 after data arrives
 account.row0_date.txt          // "11.01 | 08:34" or ""
 account.row0_action.txt        // "Purchase" or ""
 account.row0_item.txt          // "Beans" or ""
@@ -421,7 +443,7 @@ account.row9_qty.txt
 --- status bar ---
 ```
 
-Unused rows are set to empty strings.
+Unused rows remain blank (empty strings, set by HMI default).
 
 #### Table Format
 
@@ -441,11 +463,11 @@ Unused rows are set to empty strings.
 
 ### 4.7 Balance
 
-**Page ID:** `balance`  
+**Page ID:** `balance`
 
-**Entry points:** Auto-navigate from `logged` (balance below threshold), "Balance" on `account`  
+**Entry points:** Auto-navigate from `logged` (balance below threshold), "Balance" on `account`
 
-**`thsp`:** 180s  
+**`thsp`:** 180s
 
 **Flow timer:** 180000ms
 
@@ -475,37 +497,28 @@ The Nextion QR component renders the QR code from `qr.txt`.
 
 ### 4.8 Inventory
 
-**Page ID:** `inventory`  
+**Page ID:** `inventory`
 
-**Entry point:** Tap "Coffee List" title on `user`  
+**Entry point:** Tap "Coffee List" title on `user`
 
 **`thsp`:** 60s
+
+#### Loading behaviour
+
+The ESP switches to `inventory` immediately, hides `nav_prev`, and starts the `backend` timer. Once fresh data arrives, the stock fields are populated, the timer stops, and `nav_prev` becomes visible again.
 
 #### ESP-Set Objects
 
 ```
-inventory.beans_qty.txt         // "1350g"
-inventory.beans_qty.bco         // text background color (see 7.1)
-inventory.beans.bco
-inventory.beans_bg.pic          // picture ID for green/yellow/red variant
-inventory.water_qty.txt         // "4670ml"
-inventory.water_qty.bco
-inventory.water.bco
-inventory.water_bg.pic
-inventory.cow_qty.txt           // "4170ml"
-inventory.cow_qty.bco
-inventory.cow.bco
-inventory.cow_bg.pic
-inventory.oat_qty.txt           // "6670ml"
-inventory.oat_qty.bco
-inventory.oat.bco
-inventory.oat_bg.pic
+vis inventory.nav_prev          // 0 while loading, 1 after data arrives
+inventory.beans_qty.txt         // "1350g" / "1350g !" / "1350g !!"
+inventory.water_qty.txt         // "4670ml" / "4670ml !" / "4670ml !!"
+inventory.cow_qty.txt           // "4170ml" / "4170ml !" / "4170ml !!"
+inventory.oat_qty.txt           // "6670ml" / "6670ml !" / "6670ml !!"
 --- status bar ---
 ```
 
-Each `_bg.pic` is set to one of three pre-exported picture IDs (green, yellow, red) based on backend-defined inventory thresholds.
-
-Each `.bco` is set to one of the three colors (green, yellow, red)
+Status is expressed as a text suffix in the qty field: no suffix = OK, `!` = low (yellow), `!!` = critical (red). No colored backgrounds or picture swaps.
 
 Read-only screen.
 
@@ -519,37 +532,79 @@ Read-only screen.
 
 ### 4.9 Info
 
-**Page ID:** `info`  
+**Page ID:** `info`
 
-**Entry point:** Tap top bar on `user`  
+**Entry point:** Tap top bar on `user`
 
 **`thsp`:** 60s
 
 #### ESP-Set Objects
 
 ```
-info.wifi_status.txt        // "Connected (NetworkName)" or "Disconnected"
-info.backend_status.txt     // "Online" or "Offline"
-info.last_sync.txt          // "Today 04:00" or "Just now" or "Sync failed"
-info.sd_status.txt          // "OK" or "Error"
-info.firmware.txt           // "v1.0.0"
+info.wifi_status.txt        // "WIFI: NetworkName" or "WIFI: Disconnected"
+info.backend_status.txt     // "Backend: Online" or "Backend: Offline"
+info.last_sync.txt          // "Last Sync: Just now" / "Last Sync: Xm ago" /
+                            // "Last Sync: Xh ago" / "Last Sync: Never"
+info.sd_status.txt          // "SD: OK" or "SD: Error"
+info.firmware.txt           // "Firmware: v1.0.0"
+vis info.sync               // 0 while syncing, 1 otherwise
 --- status bar ---
 ```
 
 #### Sync Now Behavior
 
 1. Display sends `PAGE:INFO:SYNC`
-2. ESP fetches latest users, products, inventory, config from backend and syncs RTC
-3. ESP updates: `info.last_sync.txt="Just now"`
+2. ESP hides `sync` button, starts `backend` timer, fetches latest config from backend and syncs RTC
+3. ESP stops `backend` timer, shows `sync` button, updates: `info.last_sync.txt="Last Sync: Just now"`
 4. Page remains on `info`
 5. If offline: `info.last_sync.txt="Sync failed"`
 
 #### Interactions
 
-| Element     | Command to ESP   | ESP action                                      |
-| ----------- | ---------------- | ----------------------------------------------- |
-| Back icon   | `PAGE:INFO:BACK` | Switch to `user`                                |
-| Sync button | `PAGE:INFO:SYNC` | Fetch latest data, sync RTC, update info fields |
+| Element      | Command to ESP    | ESP action                                      |
+| ------------ | ----------------- | ----------------------------------------------- |
+| Back icon    | `PAGE:INFO:BACK`  | Switch to `user`                                |
+| Sync button  | `PAGE:INFO:SYNC`  | Fetch latest data, sync RTC, update info fields |
+| Audio button | `PAGE:INFO:AUDIO` | Switch to `audio` diagnostics page              |
+
+---
+
+### 4.10 Audio
+
+**Page ID:** `audio`
+
+**Entry point:** Audio button on `info` (`PAGE:INFO:AUDIO`)
+
+**`thsp`:** 0 (disabled — no auto-sleep during monitoring)
+
+#### ESP-Set Objects
+
+```
+audio.threshold_val.txt     // current detection threshold, e.g. "0.40"
+--- status bar ---
+```
+
+#### Waveform Graph (object ID 13)
+
+Updated by the ESP every main-loop iteration while this page is active:
+
+| Channel | Content                     | Value range                             |
+| ------- | --------------------------- | --------------------------------------- |
+| 0       | Threshold (horizontal line) | `xcorrThreshold` × 255                  |
+| 1       | Live smoothed xcorr energy  | `smoothedEnergy` × 255 (clamped to 255) |
+
+Data is pushed via Nextion `add 13,channel,value` commands. The graph scrolls left as new points arrive.
+
+#### Interactions
+
+| Element | Command | ESP action |
+| --- | --- | --- |
+| Back button | `PAGE:AUDIO:BACK` | Stop I2S, switch to `info` |
+| Record button | `PAGE:AUDIO:RECORD` | Capture grinder reference from mic, save to `/grinder_ref.bin` on SD |
+| XCORR+ | `PAGE:AUDIO:XCORR+` | Increase detection threshold by 0.05 (max 0.95), update `threshold_val.txt` |
+| XCORR- | `PAGE:AUDIO:XCORR-` | Decrease detection threshold by 0.05 (min 0.05), update `threshold_val.txt` |
+
+The I2S driver is started when this page opens and stopped when leaving. The threshold change takes effect immediately for both the waveform display and active sleep-mode detection.
 
 ---
 
@@ -564,27 +619,27 @@ PAGE:USER:INVENTORY
 PAGE:USER:INFO
 PAGE:USER:NAV:<next/prev>
 
-# Menu Item
+# Consume
 PAGE:CONSUME:CONFIRM:<username>,<single>,<double>,<cow>,<oat>
 PAGE:CONSUME:BACK
 PAGE:CONSUME:ACCOUNT:<username>
 PAGE:CONSUME:PURCHASE:<username>
 
-# Menu Inventory
+# Purchase
 PAGE:PURCHASE:CONFIRM:<username>,<beans>,<water>,<cow>,<oat>
 PAGE:PURCHASE:BACK
 
 # Logged (Done screen)
-PAGE:LOGGED:UNDO:<username>
+PAGE:LOGGED:UNDO
 PAGE:LOGGED:BACK
 PAGE:LOGGED:TIMEOUT
 
-# Account Balance (QR)
+# Balance (QR)
 PAGE:BALANCE:PAYPAL:<username>
 PAGE:BALANCE:BACK
 PAGE:BALANCE:TIMEOUT
 
-# Account Info
+# Account
 PAGE:ACCOUNT:BALANCE:<username>
 PAGE:ACCOUNT:BACK
 
@@ -594,6 +649,13 @@ PAGE:INVENTORY:BACK
 # Info
 PAGE:INFO:BACK
 PAGE:INFO:SYNC
+PAGE:INFO:AUDIO
+
+# Audio
+PAGE:AUDIO:BACK
+PAGE:AUDIO:RECORD
+PAGE:AUDIO:XCORR+
+PAGE:AUDIO:XCORR-
 
 # System Events (Nextion built-in)
 0x86    (Nextion entered sleep)
@@ -721,14 +783,15 @@ The ESP uses Nextion's native instruction set. Example sequences:
       │ ACCOUNT username
       ▼
 ┌──────────────┐
-│ account │
+│   account    │  ← switches immediately, rows blank
+│              │  ← backend timer animates while loading
+│              │  ← rows fill + balance_btn shows on arrival
 └──────┬───────┘
        │
-       │          
-    SETTLE    
-       │          
-       ▼            
-    balance    
+    SETTLE
+       │
+       ▼
+    balance
    (see §6.2)
 ```
 
@@ -737,7 +800,7 @@ The ESP uses Nextion's native instruction set. Example sequences:
 ```flow
   logged (any variant)
       │
-      │ UNDO username
+      │ UNDO  (username from ESP state, not from Nextion)
       ▼
 ┌──────────┐
 │ logging  │  "Undo" / undo arrow / "Undo last action"
@@ -753,6 +816,27 @@ The ESP uses Nextion's native instruction set. Example sequences:
     user
 ```
 
+### 6.6 Audio Diagnostics Flow
+
+```flow
+  info
+    │
+    │ AUDIO
+    ▼
+┌──────────┐
+│  audio   │  I2S starts, waveform scrolls
+│          │  ch0 = threshold line
+│          │  ch1 = live xcorr energy
+└────┬─────┘
+     │
+     ├─ XCORR+ / XCORR-  → adjust threshold, threshold_val.txt updates
+     ├─ RECORD           → capture reference snippet → /grinder_ref.bin
+     │
+     │ BACK
+     ▼
+   info  (I2S stops)
+```
+
 ---
 
 ## 7. Visual Design
@@ -761,48 +845,27 @@ The ESP uses Nextion's native instruction set. Example sequences:
 
 | Element    | hex       | 65536   |
 | ---------- | --------- | ------- |
-| Background | `#fffbf9` | `65503` |
-| Button     | `#e6e0dd` | `59163` |
-| Text       | `#372a29` | `12613` |
-| Green      | `#c0cf82` | `50800` |
-| Red        | `#ab5651` | `43690` |
-| Yellow     | `#ba9a67` | `48332` |
+| Background | `#ffffff` | `65535` |
+| Button     | `#aaaaaa` | `52857` |
+| Text       | `#000000` | `00000` |
 
 ### 7.2 Typography
 
 | Usage  | Style    |
 | ------ | -------- |
 | Body   | 15       |
-| Button | 20, blod |
+| Button | 20, bold |
 | Title  | 28, bold |
 
 ### 7.3 Icons
 
-Icons selected by the ESP via picture ID.
+Logging page icons are driven by the `action.val` variable; the Nextion HMI selects the appropriate picture internally.
 
-| Icon                   | Picture ID | Usage            |
-| ---------------------- | ---------- | ---------------- |
-| Coffee cup with steam  | 19         | Consume logging  |
-| Box with up arrow      | 20         | Purchase logging |
-| Hand with coins        | 21         | Balance  logging |
-| Undo arrow             | 22         | Undo logging     |
-| Inventory beans green  | 26         | Beans inventory  |
-| Inventory beans yellow | 25         | Beans inventory  |
-| Inventory beans red    | 25         | Beans inventory  |
-| Inventory water green  | 29         | Water inventory  |
-| Inventory water yellow | 28         | Water inventory  |
-| Inventory water red    | 27         | Water inventory  |
-| Inventory cow green    | 32         | Cow inventory    |
-| Inventory cow yellow   | 31         | Cow inventory    |
-| Inventory cow red      | 30         | Cow inventory    |
-| Inventory oat green    | 35         | Oat inventory    |
-| Inventory oat yellow   | 34         | Oat inventory    |
-| Inventory oat red      | 33         | Oat inventory    |
-
-### 7.4 Animations (TBD)
-
-| Animation    | Details                                               |
-| ------------ | ----------------------------------------------------- |
-| Grinder wake | Slow edge pulse, warm color, 2-3 cycles at ~1.5s each |
+| action.val | Icon                  | Context          |
+| ---------- | --------------------- | ---------------- |
+| `0`        | Coffee cup with steam | Consume logging  |
+| `1`        | Box with up arrow     | Purchase logging |
+| `2`        | Hand with coins       | Balance logging  |
+| `3`        | Undo arrow            | Undo logging     |
 
 ---

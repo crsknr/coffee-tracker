@@ -193,26 +193,26 @@ void showLoggingPage(const String &type, const String &username, float amount)
     if (type == "consume")
     {
         setText("logging", "title", "Logging...");
-        setPic("logging", "icon", PIC_ICON_COFFEE);
         setText("logging", "subtitle", "Logging coffee");
+        sendNextion("action.val=0");
     }
     else if (type == "purchase")
     {
         setText("logging", "title", "Logging...");
-        setPic("logging", "icon", PIC_ICON_PURCHASE);
         setText("logging", "subtitle", "Logging purchase");
+        sendNextion("action.val=1");
     }
     else if (type == "settle")
     {
         setText("logging", "title", "Recording payment");
-        setPic("logging", "icon", PIC_ICON_BALANCE);
         setText("logging", "subtitle", "Clearing balance");
+        sendNextion("action.val=2");
     }
     else if (type == "undo")
     {
         setText("logging", "title", "Undo");
-        setPic("logging", "icon", PIC_ICON_UNDO);
         setText("logging", "subtitle", "Undo last action");
+        sendNextion("action.val=3");
     }
 
     // Status bar text + visibility, then start backend animation
@@ -293,8 +293,9 @@ bool showAccountPage(const String &username)
         setText("account", "userbalance", formatBalance(user->balance));
     }
 
-    // Hide action button while loading
-    setVis("balance_btn", false);
+    // Hide buttons while loading
+    setVis("nav_prev", false);
+    setVis("balance", false);
 
     // Status bar + start backend animation
     updateStatusBar("account");
@@ -304,9 +305,10 @@ bool showAccountPage(const String &username)
     BackendResponse resp = httpGet("getLastTransactions",
                                    "user=" + username + "&limit=10");
 
-    // Stop animation and reveal action button
+    // Stop animation and reveal buttons
     stopBackendAnim();
-    setVis("balance_btn", true);
+    setVis("nav_prev", true);
+    setVis("balance", true);
 
     if (!resp.success)
     {
@@ -382,6 +384,9 @@ bool showInventoryPage()
     setPage("inventory");
     setThsp(THSP_INVENTORY);
 
+    // Hide back button while loading
+    setVis("nav_prev", false);
+
     // Status bar + start backend animation
     updateStatusBar("inventory");
     startBackendAnim();
@@ -389,8 +394,9 @@ bool showInventoryPage()
     // Fetch fresh inventory data
     BackendResponse resp = httpGet("getInventory");
 
-    // Stop animation
+    // Stop animation and reveal back button
     stopBackendAnim();
+    setVis("nav_prev", true);
 
     if (resp.success)
     {
@@ -413,8 +419,8 @@ bool showInventoryPage()
     {
         String key      = String(itemKeys[i]);
         String stockTxt = appConfig.inventory[i].stock;
-        if      (appConfig.inventory[i].status == "yellow") stockTxt += " (low)";
-        else if (appConfig.inventory[i].status == "red")    stockTxt += " (critical)";
+        if      (appConfig.inventory[i].status == "yellow") stockTxt += " !";
+        else if (appConfig.inventory[i].status == "red")    stockTxt += " !!";
         setText("inventory", key + "_qty", stockTxt);
     }
 
@@ -436,39 +442,39 @@ void showInfoPage()
     // Text content
     if (WiFi.status() == WL_CONNECTED)
     {
-        setText("info", "wifi_status", "Connected (" + WiFi.SSID() + ")");
+        setText("info", "wifi_status", "WIFI: " + WiFi.SSID());
     }
     else
     {
-        setText("info", "wifi_status", "Disconnected");
+        setText("info", "wifi_status", "WIFI: Disconnected");
     }
 
     setText("info", "backend_status",
-            connectionState == ONLINE ? "Online" : "Offline");
+            connectionState == ONLINE ? "Backend: Online" : "Backend: Offline");
 
     if (lastSyncTime == 0)
     {
-        setText("info", "last_sync", "Never");
+        setText("info", "last_sync", "Last Sync: Never");
     }
     else
     {
         unsigned long elapsed = (millis() - lastSyncTime) / 1000;
         if (elapsed < 60)
         {
-            setText("info", "last_sync", "Just now");
+            setText("info", "last_sync", "Last Sync: Just now");
         }
         else if (elapsed < 3600)
         {
-            setText("info", "last_sync", String(elapsed / 60) + "m ago");
+            setText("info", "last_sync", "Last Sync: " + String(elapsed / 60) + "m ago");
         }
         else
         {
-            setText("info", "last_sync", String(elapsed / 3600) + "h ago");
+            setText("info", "last_sync", "Last Sync: " + String(elapsed / 3600) + "h ago");
         }
     }
 
-    setText("info", "sd_status", sdAvailable ? "OK" : "Error");
-    setText("info", "firmware", FIRMWARE_VERSION);
+    setText("info", "sd_status", "SD: " + String(sdAvailable ? "OK" : "Error"));
+    setText("info", "firmware", "Firmware: " + String(FIRMWARE_VERSION));
 
     // Status bar text + visibility
     updateStatusBar("info");

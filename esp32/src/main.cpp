@@ -46,6 +46,7 @@ void setup() {
 
     // Step 1: WiFi
     setBootStatus("Connecting to WiFi...");
+    WiFi.setHostname(WIFI_HOSTNAME);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -207,8 +208,8 @@ void loop() {
             processAudioFrame();  // updates smoothedEnergy; detection return ignored
             uint8_t threshVal = (uint8_t)(getXcorrThreshold() * 255.0f);
             uint8_t energyVal = (uint8_t)(min(1.0f, getSmoothedEnergy()) * 255.0f);
-            addWaveformPoint(13, 0, threshVal);  // channel 0 = threshold line
-            addWaveformPoint(13, 1, energyVal);  // channel 1 = live xcorr energy
+            addWaveformPoint(9, 0, threshVal);  // channel 0 = threshold line
+            addWaveformPoint(9, 1, energyVal);  // channel 1 = live xcorr energy
         }
 
         // Periodic reconnect when offline
@@ -273,12 +274,12 @@ static void handleTouchWake() {
     displayState = AWAKE;
 
     // Refresh user data if online
-    if (connectionState == ONLINE) {
-        BackendResponse resp = httpGet("getUsers");
-        if (resp.success) {
-            parseUsers(resp.doc);
-        }
-    }
+    // if (connectionState == ONLINE) {
+    //     BackendResponse resp = httpGet("getUsers");
+    //     if (resp.success) {
+    //         parseUsers(resp.doc);
+    //     }
+    // }
 
     showUserPage();
 }
@@ -291,13 +292,13 @@ static void wakeDisplay() {
     sendNextion("sleep=0");
     displayState = AWAKE;
 
-    // Refresh user data if online
-    if (connectionState == ONLINE) {
-        BackendResponse resp = httpGet("getUsers");
-        if (resp.success) {
-            parseUsers(resp.doc);
-        }
-    }
+    // // Refresh user data if online
+    // if (connectionState == ONLINE) {
+    //     BackendResponse resp = httpGet("getUsers");
+    //     if (resp.success) {
+    //         parseUsers(resp.doc);
+    //     }
+    // }
 
     showUserPage();
 }

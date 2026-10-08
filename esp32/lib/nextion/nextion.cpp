@@ -109,6 +109,7 @@ void startBackendAnim() {
 
 void stopBackendAnim() {
     sendNextion("backend.en=0");
+    setVis("backend_icon", false);
 }
 
 // ============================================
