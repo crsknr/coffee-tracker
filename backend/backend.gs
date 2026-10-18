@@ -556,6 +556,13 @@ function handleSettle(data) {
     // Update user balance
     updateUserBalance(data.user, amount);
 
+    // Deduct from treasurer balance (they received the payment)
+    const config = getConfigMap();
+    const treasurer = config['treasurer'] || '';
+    if (treasurer && treasurer !== data.user) {
+        updateUserBalance(treasurer, -amount);
+    }
+
     // Send Telegram notification
     sendTelegram('💰 ' + data.user + ' settled €' + amount.toFixed(2) + ' — check PayPal');
 
@@ -650,8 +657,13 @@ function handleUndo(data) {
     // Update user balance
     updateUserBalance(data.user, reversedAmount);
 
-    // If undoing a settlement, notify
+    // If undoing a settlement, reverse treasurer balance and notify
     if (originalType === 'settle') {
+        const config = getConfigMap();
+        const treasurer = config['treasurer'] || '';
+        if (treasurer && treasurer !== data.user) {
+            updateUserBalance(treasurer, -reversedAmount);
+        }
         sendTelegram('↩️ ' + data.user + ' undid settlement of €' + Math.abs(originalAmount).toFixed(2));
     }
 

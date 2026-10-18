@@ -17,6 +17,7 @@ audio/*.pyc
 node_modules/
 
 # Nextion Editor temp files
+nextion/*.tft
 nextion/*.tft.tmp
 nextion/CompileLog.txt
 
